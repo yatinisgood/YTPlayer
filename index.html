@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>自訂 YouTube 字幕播放器</title>
+    <style> /* 暗色系樣式保持不變 */
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:20px;background-color:#121212;color:#e0e0e0}#container{max-width:800px;margin:auto;background-color:#1e1e1e;padding:25px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,.5);border:1px solid #333}
+        /* --- 【修改】將標題置左 --- */
+        h1{color:#fff;text-align:left;border-bottom:1px solid #444;padding-bottom:15px;margin-top:0;min-height:1.2em;}
+        input[type=text]{width:calc(100% - 95px);padding:10px;border:1px solid #444;border-radius:6px;background-color:#2c2c2c;color:#e0e0e0;font-size:1em}input[type=file]{color:#bbb}button{padding:10px 15px;border:none;background-color:#007bff;color:#fff;border-radius:6px;cursor:pointer;font-weight:700;transition:background-color .2s ease}button:hover{background-color:#0056b3}#player-container{margin-top:20px;position:relative;border-radius:8px;overflow:hidden}#player{width:100%;aspect-ratio:16/9}#subtitle-container{margin-top:20px;padding:20px;background-color:#000;color:#fff;border-radius:8px;min-height:60px;font-size:1.6em;text-align:center;line-height:1.4;font-weight:700;text-shadow:1px 1px 3px rgba(0,0,0,.7)}#offset-controls{margin-top:20px;padding-top:15px;border-top:1px solid #444;display:flex;align-items:center;justify-content:center;gap:12px}#offset-controls button{width:50px;font-size:1.2em;background-color:#3e3e3e}#offset-controls button:hover{background-color:#555}#offset-value{font-size:1.1em;font-weight:700;min-width:120px;text-align:center;color:#fff}
+        
+        /* --- 新增與調整下載按鈕的樣式 --- */
+        #download-container {
+            margin-top: 15px; /* 與上方控制項產生間距 */
+            text-align: right; /* 讓容器裡面的內容靠右對齊 */
+        }
+        #download-srt-button {
+            width: auto; /* 寬度自動適應內容 */
+            padding: 10px 20px; /* 增加左右內邊距，讓按鈕更好看 */
+            background-color: #28a745; /* 維持綠色 */
+        }
+        #download-srt-button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <h1 id="video-title">載入中...</h1>
+
+    <div id="player-container">
+        <div id="player"></div>
+    </div>
+    <div id="subtitle-container">請稍候，正在從網址參數載入影片與字幕...</div>
+    
+    <div id="offset-controls">
+        <button onclick="adjustOffset(-0.1)">-</button>
+        <span id="offset-value">偏移: 0.0 s</span>
+        <button onclick="adjustOffset(0.1)">+</button>
+    </div>
+
+    <div id="download-container" style="display: none;">
+        <button id="download-srt-button" onclick="downloadSubtitles()">下載字幕 (.srt)</button>
+    </div>
+</div>
+
+<script>
+    var tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+    var player, subtitles = [], isPlayerPlaying = false, subtitleOffset = 0;
+    var rawSrtContent = ''; 
+
+    function onYouTubeIframeAPIReady(){
+        console.log("YouTube API is ready.");
+        loadDataFromUrl();
+        requestAnimationFrame(subtitleLoop);
+    }
+    
+    async function loadDataFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const youtubeUrl = params.get('youtubeUrl');
+        const subtitleUrl = params.get('subtitleUrl'); 
+
+        if (!youtubeUrl) {
+            document.getElementById('video-title').innerText = "錯誤";
+            document.getElementById('subtitle-container').innerText = "缺少 'youtubeUrl' 網址參數。";
+            return;
+        }
+        
+        const videoId = parseVideoID(youtubeUrl);
+        if (videoId) {
+            loadVideoFromId(videoId);
+        } else {
+            document.getElementById('video-title').innerText = "錯誤";
+            document.getElementById('subtitle-container').innerText = "無效的 YouTube 網址。";
+            return;
+        }
+
+        if (!subtitleUrl) {
+            document.getElementById('subtitle-container').innerText = "影片已載入，但缺少 'subtitleUrl' 字幕網址參數。";
+            return;
+        }
+
+        try {
+            console.log("偵測到字幕 URL，開始下載...");
+            const response = await fetch(subtitleUrl); 
+            if (!response.ok) {
+                throw new Error(`無法下載字幕 (HTTP ${response.status}): ${response.statusText}`);
+            }
+            rawSrtContent = await response.text();
+            console.log("字幕下載成功！");
+
+            subtitles = parseSRT(rawSrtContent);
+            document.getElementById('subtitle-container').innerText = "字幕已載入，請播放影片。";
+            
+            document.getElementById('download-container').style.display = 'block';
+
+        } catch (error) {
+            console.error("從 URL 載入字幕失敗:", error);
+            document.getElementById('subtitle-container').innerText = "自動載入字幕失敗，請檢查連結。\n錯誤訊息: " + error.message;
+        }
+    }
+    
+    function onPlayerReady(event) {
+        const videoTitle = event.target.getVideoData().title;
+        if (videoTitle) {
+            document.getElementById('video-title').innerText = videoTitle;
+        } else {
+            document.getElementById('video-title').innerText = "自訂 YouTube 字幕播放器";
+        }
+    }
+
+    function downloadSubtitles() {
+        if (!rawSrtContent) {
+            alert("沒有可下載的字幕內容。");
+            return;
+        }
+        
+        let fileName = "subtitles.srt";
+        if (player && player.getVideoData) {
+            const videoTitle = player.getVideoData().title;
+            if (videoTitle) {
+                fileName = videoTitle.replace(/[\\?%*:|"<>]/g, '_') + '.srt';
+            }
+        }
+
+        const blob = new Blob([rawSrtContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    }
+
+    function subtitleLoop() {
+        if (isPlayerPlaying) {
+            updateSubtitle();
+        }
+        requestAnimationFrame(subtitleLoop);
+    }
+
+    function onPlayerStateChange(event) {
+        isPlayerPlaying = (event.data == YT.PlayerState.PLAYING);
+    }
+
+    function updateSubtitle() {
+        if (!player || !player.getCurrentTime || subtitles.length === 0) return;
+        
+        const currentTime = player.getCurrentTime() + subtitleOffset;
+        const subtitleDisplay = document.getElementById('subtitle-container');
+        let currentSubtitle = subtitles.find(sub => currentTime >= sub.start && currentTime <= sub.end);
+        
+        subtitleDisplay.innerHTML = currentSubtitle ? currentSubtitle.text.replace(/\n/g, "<br>") : "&nbsp;"; 
+    }
+
+    function adjustOffset(amount) {
+        subtitleOffset += amount;
+        document.getElementById('offset-value').innerText = `偏移: ${subtitleOffset.toFixed(1)} s`;
+        updateSubtitle();
+    }
+    
+    function loadVideoFromId(videoId) {
+        if (player) {
+            player.loadVideoById(videoId);
+        } else {
+            player = new YT.Player("player", {
+                videoId: videoId,
+                events: { 
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange 
+                }
+            });
+        }
+    }
+    
+    function parseVideoID(url) {
+        const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+        const match = url.match(regex);
+        return match ? match[1] : null;
+    }
+    
+    function parseSRT(data) {
+        let text = data.trim();
+        if (text.charCodeAt(0) === 0xFEFF) {
+            text = text.slice(1);
+        }
+        text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        
+        const blocks = text.split('\n\n');
+        const result = [];
+        const timeRegex = /(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})/;
+
+        function timeToSeconds(time) {
+            const t = time.replace(',', '.');
+            const parts = t.split(':');
+            try {
+                const seconds = parseFloat(parts[2]);
+                return parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + seconds;
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        for (const block of blocks) {
+            const lines = block.split('\n');
+            if (lines.length < 2) continue;
+
+            let timeLineIndex = lines.findIndex(line => timeRegex.test(line));
+
+            if (timeLineIndex !== -1) {
+                const timeMatch = lines[timeLineIndex].match(timeRegex);
+                const startTime = timeToSeconds(timeMatch[1]);
+                const endTime = timeToSeconds(timeMatch[2]);
+                const subtitleText = lines.slice(timeLineIndex + 1).join('\n').trim();
+
+                if (!isNaN(startTime) && !isNaN(endTime) && subtitleText) {
+                    result.push({ start: startTime, end: endTime, text: subtitleText });
+                }
+            }
+        }
+        
+        console.log(`字幕解析完成！總共成功載入 ${result.length} 句字幕。`);
+        return result;
+    }
+</script>
+
+</body>
+</html>
