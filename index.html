@@ -4,80 +4,139 @@
     <title>自訂 YouTube 字幕播放器</title>
     <style>
         /* --- 基礎樣式 (暗色系) --- */
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background-color: #121212; color: #e0e0e0; margin: 0; }
-        #container { max-width: 800px; margin: auto; background-color: #1e1e1e; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, .5); border: 1px solid #333; transition: max-width 0.3s ease; }
-        h1 { color: #fff; text-align: left; border-bottom: 1px solid #444; padding-bottom: 15px; margin-top: 0; min-height: 1.2em; font-size: 1.5em; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden; /* 避免產生捲動軸 */
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #121212; 
+            color: #e0e0e0; 
+            display: flex; /* 讓 container 能填滿 body */
+        }
+
+        #container { 
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box; /* 讓 padding 不會影響總寬高 */
+            background-color: #1e1e1e; 
+            
+            /* --- 核心版面配置：使用 Flexbox 垂直排列 --- */
+            display: flex;
+            flex-direction: column;
+        }
+
+        h1 { 
+            color: #fff; 
+            text-align: left; 
+            border-bottom: 1px solid #444; 
+            padding-bottom: 15px; 
+            margin-top: 0;
+            margin-bottom: 15px;
+            min-height: 1.2em; 
+            font-size: 1.5em; 
+            flex-shrink: 0; /* 標題高度固定，不壓縮 */
+        }
         
         /* --- 播放器容器樣式 --- */
         #player-container {
-            margin-top: 20px;
             position: relative;
-            border-radius: 8px;
-            overflow: hidden;
             background-color: #000;
             width: 100%;
-            aspect-ratio: 16 / 9;
-            transition: height 0.4s ease-in-out;
-        }
-        #player { width: 100%; height: 100%; }
-        
-        /* --- 符合高度模式 --- */
-        #player-container.fit-height { height: 75vh; aspect-ratio: auto; }
-
-        /* --- 尺寸控制按鈕 --- */
-        #size-controls { margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px; }
-        #size-controls button { width: auto; padding: 8px 16px; font-size: 0.9em; background-color: #3e3e3e; }
-        #size-controls button:hover { background-color: #555; }
-        
-        #subtitle-container { margin-top: 15px; padding: 20px; background-color: #000; color: #fff; border-radius: 8px; min-height: 60px; font-size: 1.6em; text-align: center; line-height: 1.4; font-weight: 700; text-shadow: 1px 1px 3px rgba(0, 0, 0, .7); }
-        #offset-controls { margin-top: 20px; padding-top: 15px; border-top: 1px solid #444; display: flex; align-items: center; justify-content: center; gap: 12px; }
-        #offset-controls button { width: 50px; font-size: 1.2em; background-color: #3e3e3e; }
-        #offset-controls button:hover { background-color: #555; }
-        #offset-value { font-size: 1.1em; font-weight: 700; min-width: 120px; text-align: center; color: #fff; }
-        
-        #download-container { margin-top: 15px; text-align: right; }
-        #download-srt-button { width: auto; padding: 10px 20px; background-color: #28a745; }
-        #download-srt-button:hover { background-color: #218838; }
-
-        /* --- 自訂全螢幕模式的關鍵樣式 --- */
-        body.custom-fullscreen {
-            overflow: hidden;
-        }
-        
-        body.custom-fullscreen #container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            max-width: 100%;
-            z-index: 1000;
-            padding: 10px;
-            box-sizing: border-box;
-            border-radius: 0;
-            box-shadow: none;
-            display: flex;
-            flex-direction: column; 
-        }
-
-        body.custom-fullscreen #player-container {
+            
+            /* --- 核心版面配置：讓播放器填滿剩餘空間 --- */
             flex-grow: 1; 
-            height: 0;
-            margin-top: 10px;
-            aspect-ratio: auto;
+            height: 0; /* 搭配 flex-grow 的必要設定 */
+            min-height: 0; /* 避免內容撐開 */
         }
         
-        body.custom-fullscreen h1 { flex-shrink: 0; padding-bottom: 10px; border: none; }
-        body.custom-fullscreen #subtitle-container { 
-            flex-shrink: 0;
-            font-size: 2em;
+        #player { 
+            width: 100%; 
+            height: 100%; 
         }
 
-        body.custom-fullscreen #offset-controls,
-        body.custom-fullscreen #download-container,
-        body.custom-fullscreen #size-controls {
-            display: none;
+        /* --- 底端控制列容器 --- */
+        #bottom-bar {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-top: 15px;
+            flex-shrink: 0; /* 控制列高度固定，不壓縮 */
         }
+        
+        /* --- 字幕容器樣式 (位於底端控制列) --- */
+        #subtitle-container { 
+            padding: 15px; 
+            background-color: #000; 
+            color: #fff; 
+            border-radius: 8px; 
+            min-height: 50px; /* 最小高度 */
+            font-size: 1.6em; 
+            text-align: center; 
+            line-height: 1.4; 
+            font-weight: 700; 
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, .7);
+            flex-grow: 1; /* 佔滿左側剩餘空間 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* --- 時間偏移控制器樣式 (位於底端控制列) --- */
+        #offset-controls { 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 12px; 
+            flex-shrink: 0; /* 不被壓縮 */
+        }
+
+        #offset-controls button { 
+            width: 50px; 
+            font-size: 1.2em; 
+            background-color: #3e3e3e; 
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 8px 0;
+        }
+
+        #offset-controls button:hover { 
+            background-color: #555; 
+        }
+
+        #offset-value { 
+            font-size: 1.1em; 
+            font-weight: 700; 
+            min-width: 120px; 
+            text-align: center; 
+            color: #fff; 
+        }
+        
+        #download-container { 
+            text-align: right; 
+            position: absolute;
+            top: 25px;
+            right: 25px;
+        }
+        #download-srt-button { 
+            width: auto; 
+            padding: 10px 20px; 
+            background-color: #28a745; 
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #download-srt-button:hover { 
+            background-color: #218838; 
+        }
+
     </style>
 </head>
 <body>
@@ -85,25 +144,22 @@
 <div id="container">
     <h1 id="video-title">載入中...</h1>
 
+    <div id="download-container" style="display: none;">
+        <button id="download-srt-button" onclick="downloadSubtitles()">下載字幕 (.srt)</button>
+    </div>
+
     <div id="player-container">
         <div id="player"></div>
     </div>
 
-    <div id="size-controls">
-        <button id="fit-height-btn" onclick="toggleFitHeight()">符合高度</button>
-        <button id="fullscreen-btn" onclick="toggleFullScreen()">全螢幕</button>
-    </div>
-    
-    <div id="subtitle-container">請稍候，正在從網址參數載入影片與字幕...</div>
-    
-    <div id="offset-controls">
-        <button onclick="adjustOffset(-0.1)">-</button>
-        <span id="offset-value">偏移: 0.0 s</span>
-        <button onclick="adjustOffset(0.1)">+</button>
-    </div>
-
-    <div id="download-container" style="display: none;">
-        <button id="download-srt-button" onclick="downloadSubtitles()">下載字幕 (.srt)</button>
+    <div id="bottom-bar">
+        <div id="subtitle-container">請稍候，正在從網址參數載入影片與字幕...</div>
+        
+        <div id="offset-controls">
+            <button onclick="adjustOffset(-0.1)">-</button>
+            <span id="offset-value">偏移: 0.0 s</span>
+            <button onclick="adjustOffset(0.1)">+</button>
+        </div>
     </div>
 </div>
 
@@ -115,43 +171,6 @@
 
     var player, subtitles = [], isPlayerPlaying = false, subtitleOffset = 0;
     var rawSrtContent = ''; 
-
-    function toggleFitHeight() {
-        if (document.body.classList.contains('custom-fullscreen')) {
-            toggleFullScreen();
-            return;
-        }
-        document.getElementById('player-container').classList.toggle('fit-height');
-        updateSizeControlButtonText();
-    }
-
-    function toggleFullScreen() {
-        document.body.classList.toggle('custom-fullscreen');
-        const isFullScreen = document.body.classList.contains('custom-fullscreen');
-        
-        // 進入全螢幕時，確保版型是 fit-height，這樣退出時才會是期望的版型
-        if (isFullScreen) {
-            document.getElementById('player-container').classList.add('fit-height');
-        }
-        updateSizeControlButtonText();
-    }
-    
-    function updateSizeControlButtonText() {
-        const fitHeightBtn = document.getElementById('fit-height-btn');
-        const playerContainer = document.getElementById('player-container');
-
-        if (playerContainer.classList.contains('fit-height')) {
-            fitHeightBtn.innerText = '恢復原始';
-        } else {
-            fitHeightBtn.innerText = '符合高度';
-        }
-    }
-    
-    window.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape' && document.body.classList.contains('custom-fullscreen')) {
-            toggleFullScreen();
-        }
-    });
 
     function onYouTubeIframeAPIReady(){
         console.log("YouTube API is ready.");
@@ -260,10 +279,9 @@
         } else {
             player = new YT.Player("player", {
                 videoId: videoId,
-                // --- 【關鍵修改】在這裡加入參數 ---
                 playerVars: {
-                    'playsinline': 1, // 在手機上於頁內播放
-                    'fs': 0           // 停用 YouTube 播放器內建的全螢幕按鈕
+                    'playsinline': 1,
+                    'fs': 0          
                 },
                 events: { 
                     'onReady': onPlayerReady,
